@@ -225,7 +225,16 @@ class Flora(Lifeforms):
         return eaten
 
 # Species of flora
+class Eucalyptus(Flora):
+    def __init__(self, starting_population=20, minsize=2, maxsize=15, growrate=0.2, reproducerate=0.1, needSunlight=True, expandRate=0.04, maxIndividualArea=6):
+        super().__init__(starting_population, minsize, maxsize, growrate,
+                         reproducerate, needSunlight, expandRate, maxIndividualArea)
 
+    def beEaten(self, amount, eater=None):
+        """Override: Only Koalas can eat Eucalyptus."""
+        if eater is None or eater.__class__.__name__ != "Koala":
+            return 0  # Not edible for other species
+        return super().beEaten(amount, eater)
 
 class MangoTree(Flora):
     def __init__(self, starting_population=10, minsize=1, maxsize=10, growrate=0.1, reproducerate=0.05, needSunlight=True, expandRate=0.02, maxIndividualArea=5,
