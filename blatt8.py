@@ -1,4 +1,3 @@
-from numpy import double
 import random
 
 # Base Island class
@@ -6,8 +5,6 @@ import random
 
 class Island():
     def __init__(self, size: float, isolation: bool):
-        self.temperature = random.randrange(22, 40)
-        self.weathercon = random.choice(["storm", "windy", "normal"])
         self.size = size
         self.isolation = isolation
 
@@ -16,8 +13,8 @@ class Island():
 
 
 class Ecosystem(Island):
-    def __init__(self, temperature, weathercon):
-        super().__init__(temperature, weathercon)
+    def __init__(self, size: float, isolation: bool):
+        super().__init__(size, isolation)
         self.area = 50
         self.day = 0
         self.flora = []
@@ -31,17 +28,15 @@ class Ecosystem(Island):
             self.fauna.append(organism)
     
     def available_area(self) -> float:
-        used_area = sum(
-            plant.population * plant.maxIndividualArea
-            for plant in self.flora
-        )
+        used_area = sum(p.maxIndividualArea for p in self.flora if p.is_alive())
         return max(0, self.size - used_area)
 
     def environment(self):
         self.temperature = random.randrange(22, 40)
-        if random.random() < 0.3:
+        r = random.random()
+        if r < 0.3:
             self.weathercon = "windy"
-        elif 0.3 < random.random() < 0.4:
+        elif r < 0.4:
             self.weathercon = "storm"
         else:
             self.weathercon = "normal"
@@ -111,9 +106,9 @@ class Ecosystem(Island):
                 break
         for plant in self.flora:
             plant.grow()
-        """ offspring = plant.reproduce()
-            new_organisms.extend(offspring)"""
 
+        for plant in self.flora:
+            plant.fruiting()
         # Animals eat
         for animal in self.fauna:
             if isinstance(animal, Herbivore):
@@ -125,6 +120,9 @@ class Ecosystem(Island):
                     animal.forage(self.flora)
                 else:
                     animal.hunt(self.fauna)
+
+            # make the animals starve
+            animal.starvation()
 
             # Animal reproduces
             offspring = animal.reproduce()
@@ -139,9 +137,7 @@ class Ecosystem(Island):
         self.fauna = [a for a in self.fauna if a.is_alive()]
         
         # Print stats
-        print(f"Day {self.day}: {len(self.flora)} plants, {len(self.fauna)} animals")
-    # each spaces is measured with unit
-    # def init(self):
+        #print(f"Day {self.day}: {len(self.flora)} plants, {len(self.fauna)} animals")
 
 class Lifeforms():
     def __init__(self, starting_population: int, minsize: int, maxsize: int, growrate: float, reproducerate: float, island=None, creatures= None):
@@ -154,16 +150,15 @@ class Lifeforms():
         self.reproducerate = reproducerate
         self.island = island
         self.alive = True
-    
+
     def grow(self):
         """Individual organism grows"""
         if self.is_alive():
             self.currentsize = min(self.currentsize * (1 + self.growrate), self.maxsize)
         return self.currentsize
 
-    def populationReduce(self, amount):
-        hunted = min(amount, self.population)
-        self.population -= hunted
+    def is_alive(self):
+        return self.alive
 
     def die(self):
         """Kill the organism"""
@@ -180,13 +175,16 @@ class Flora(Lifeforms):
         self.expandRate = expandRate
         self.maxIndividualArea = maxIndividualArea
         self.current_expand_modifier = 1.0
+        self.fruitYield = 0
+        self.berryYield = 0
+        self.isFruiting = False
+        self.isBerrying = False
 
-    def expand_population(self):
+    def expansion_request(self):
         """Adds new individuals based on expandRate"""
-        offspring = []
-        
         # Only expand if mature enough
     
+        total_new_plants = 0
         if self.currentsize >= self.maxsize * 0.5:
             # Calculate exact number (can be fractional)
             exact_new_plants = 1 * self.expandRate * self.current_expand_modifier  # Each plant can spawn based on expandRate
@@ -209,18 +207,44 @@ class Flora(Lifeforms):
 
         return total_new_plants
 
+    def is_alive(self):
+        return self.alive and self.currentsize >= self.minsize
+
     def die(self):
-        if self.currentsize < self.minsize:
-            self.population -= 1
+        self.alive = False
+    
+    def fruiting(self):
+        # Default: do nothing
+        pass
 
     def beEaten(self, amount, eater=None):
-        """Plants lose size when eaten, die if size drops below minsize"""
-        eaten = min(amount, self.currentsize)
-        self.currentsize -= eaten
+        """
+        Harvest fruits or berries without reducing plant height.
+        amount: how many units of edible part to eat
+        eater: optional, for special logic like Koala
+        """
+        eaten = 0
         
-        # Plants die if they shrink below minimum size
-        if self.currentsize < self.minsize:
-            self.die()
+        # Check type of plant to decide what to reduce
+        if self.__class__.__name__ == "MangoTree" and self.fruitYield > 0:
+            eaten = min(amount, self.fruitYield)
+            self.fruitYield -= eaten
+            
+        elif self.__class__.__name__ == "Elderberry" and self.berryYield > 0:
+            eaten = min(amount, self.berryYield)
+            self.berryYield -= eaten
+            
+        else:
+            # Default: reduce plant size if edible
+            eaten = min(amount, self.currentsize)
+            self.currentsize -= eaten
+            if self.currentsize < self.minsize:
+                self.die()
+        
+        # Optionally heal or reset hunger for the eater
+        """if eater is not None and eaten > 0:
+            eater.health = min(100, eater.health + getattr(eater, "healEffect", 0))
+            eater.hunger = 0"""
         
         return eaten
 
@@ -238,30 +262,36 @@ class Eucalyptus(Flora):
 
 class MangoTree(Flora):
     def __init__(self, starting_population=10, minsize=1, maxsize=10, growrate=0.1, reproducerate=0.05, needSunlight=True, expandRate=0.02, maxIndividualArea=5,
-             isFruiting: bool = False, fruitRate: float = 0.1, fruitYield: int = 20):
+             isFruiting: bool = True, fruitRate: float = 0.1, maxFruit: int = 30):
         super().__init__(starting_population, minsize, maxsize, growrate,
                      reproducerate, needSunlight, expandRate, maxIndividualArea)
         self.isFruiting = isFruiting
         self.fruitRate = fruitRate
-        self.fruitYield = fruitYield
+        self.fruitYield = 0
+        self.maxFruit = maxFruit
 
     def fruiting(self):
         if self.isFruiting:
-            self.fruitYield += int(self.population * self.fruitRate)
+            # make fruits propotional to it's size
+            self.fruitYield = min(self.fruitYield + int(self.currentsize * self.fruitRate), self.maxFruit)
+        return 0
 
 
 class Elderberry(Flora):
     def __init__(self, starting_population=15, minsize=1, maxsize=8, growrate=0.15, reproducerate=0.07, needSunlight=True, expandRate=0.03, maxIndividualArea=4,
-             isFruiting: bool = False, fruitRate: float = 0.12, berryYield: int = 25):
+             isBerrying: bool = True, berryRate: float = 0.12, maxBerry: int = 75):
         super().__init__(starting_population, minsize, maxsize, growrate,
                      reproducerate, needSunlight, expandRate, maxIndividualArea)
-        self.isFruiting = isFruiting
-        self.fruitRate = fruitRate
-        self.berryYield = berryYield
+        self.isBerrying = isBerrying
+        self.berryRate = berryRate
+        self.berryYield = 0
+        self.maxBerry = maxBerry
 
     def fruiting(self):
-        if self.isFruiting:
-            self.berryYield += int(self.population * self.fruitRate)
+        if self.isBerrying:
+             # make berries propotional to it's size
+            self.berryYield = min(self.berryYield + int(self.currentsize * self.berryRate), self.maxBerry)
+        return 0
 
 
 class Grass(Flora):
@@ -272,11 +302,11 @@ class Grass(Flora):
 
 # Fauna base class
 class Fauna(Lifeforms):
-    def __init__(self, starting_population, minsize, maxsize, growrate, reproducerate, nutrientNeed: str, starveRate: float, health: float, selfHarmEffect: float,
+    def __init__(self, starting_population, minsize, maxsize, growrate, reproducerate, starveRate: float, health: float, selfHarmEffect: float,
              healEffect: float):
         super().__init__(starting_population, minsize, maxsize, growrate, reproducerate)
-        self.nutrientNeed = nutrientNeed
         self.starveRate = starveRate
+        self.hunger = 0
         self.health = health
         self.selfHarmEffect = selfHarmEffect
         self.healEffect = healEffect
@@ -286,8 +316,6 @@ class Fauna(Lifeforms):
         """Override: fauna dies if health <= 0 or size <= 0"""
         return self.alive and self.health > 0 and self.currentsize > 0
 
-    def consume(self):
-        pass
 
     def starvation(self):
         """Check if animal is starving"""
@@ -330,10 +358,10 @@ class Fauna(Lifeforms):
 
 
 class Carnivore(Fauna):
-    def __init__(self, starting_population, minsize, maxsize, growrate, reproducerate, nutrientNeed, starveRate,
+    def __init__(self, starting_population, minsize, maxsize, growrate, reproducerate, starveRate,
              health, selfHarmEffect, healEffect, eatMeat: bool, huntSuccessRate: float, selfHarmRate: float):
         super().__init__(starting_population, minsize, maxsize, growrate, reproducerate,
-                     nutrientNeed, starveRate, health, selfHarmEffect, healEffect)
+                     starveRate, health, selfHarmEffect, healEffect)
         self.eatMeat = eatMeat
         self.huntSuccessRate = huntSuccessRate
         self.selfHarmRate = selfHarmRate
@@ -353,20 +381,20 @@ class Carnivore(Fauna):
             target = random.choice(prey_list)
             if random.random() < (self.huntSuccessRate * self.current_hunt_modifier):
                 # Successful hunt
-                #meat_gained = target.beEaten(target.currentsize, eater=self)
                 self.health = min(100, self.health + self.healEffect)
                 self.hunger = 0
-            else:
-                # Failed hunt - self harm
-                if random.random() < self.selfHarmRate:
-                    self.health -= self.selfHarmEffect
+                target.die()
+
+            # Failed hunt - self harm
+            if random.random() < self.selfHarmRate:
+                self.health -= self.selfHarmEffect
 
 
 class Herbivore(Fauna):
-    def __init__(self, starting_population, minsize, maxsize, growrate, reproducerate, nutrientNeed, starveRate,
+    def __init__(self, starting_population, minsize, maxsize, growrate, reproducerate, starveRate,
              health, selfHarmEffect, healEffect, eatPlants: bool):
         super().__init__(starting_population, minsize, maxsize, growrate, reproducerate,
-                     nutrientNeed, starveRate, health, selfHarmEffect, healEffect)
+                     starveRate, health, selfHarmEffect, healEffect)
         self.eatPlants = eatPlants
     
     def forage(self, flora_list):
@@ -387,10 +415,13 @@ class Herbivore(Fauna):
 
 
 class Omnivore(Fauna):
-    def __init__(self, starting_population, minsize, maxsize, growrate, reproducerate, nutrientNeed, starveRate,
+    def __init__(self, starting_population, minsize, maxsize, growrate, reproducerate, starveRate,
              health, selfHarmEffect, healEffect, eatAll: bool, huntSuccessRate: float, selfHarmRate: float):
         super().__init__(starting_population, minsize, maxsize, growrate, reproducerate,
-                     nutrientNeed, starveRate, health, selfHarmEffect, healEffect)
+                     starveRate, health, selfHarmEffect, healEffect)
+        self.eatAll = eatAll
+        self.huntSuccessRate = huntSuccessRate
+        self.selfHarmRate = selfHarmRate
 
     def hunt(self, fauna_list):
         """Hunt other animals (same as Carnivore)"""
@@ -406,12 +437,11 @@ class Omnivore(Fauna):
             target = random.choice(prey_list)
             if random.random() < self.huntSuccessRate * self.current_hunt_modifier:
                 # Successful hunt - prey dies immediately
-                meat_gained = target.beEaten(target.currentsize, eater=self)
                 self.health = min(100, self.health + self.healEffect)
                 self.hunger = 0
-            else:
-                if random.random() < self.selfHarmRate:
-                    self.health -= self.selfHarmEffect
+                target.die()
+            if random.random() < self.selfHarmRate:
+                self.health -= self.selfHarmEffect
     
     def forage(self, flora_list):
         """Eat plants (same as Herbivore)"""
@@ -432,36 +462,36 @@ class Omnivore(Fauna):
 
 
 class Leopard(Carnivore):
-    def __init__(self, starting_population=5, minsize=1, maxsize=3, growrate=0.1, reproducerate=0.05, nutrientNeed=0.08, starveRate=0.1,
+    def __init__(self, starting_population=5, minsize=1, maxsize=3, growrate=0.1, reproducerate=0.05, starveRate=0.1,
              health=100, selfHarmEffect=5, healEffect=10, eatMeat=True, huntSuccessRate=0.6, selfHarmRate=0.05):
-        super().__init__(starting_population, minsize, maxsize, growrate, reproducerate, nutrientNeed, starveRate,
+        super().__init__(starting_population, minsize, maxsize, growrate, reproducerate, starveRate,
                      health, selfHarmEffect, healEffect, eatMeat, huntSuccessRate, selfHarmRate)
 
 
 class Rabbit(Herbivore):
-    def __init__(self, starting_population=30, minsize=0.2, maxsize=0.5, growrate=0.2, reproducerate=0.1, nutrientNeed=0.01, starveRate=0.15,
+    def __init__(self, starting_population=30, minsize=0.2, maxsize=0.5, growrate=0.2, reproducerate=0.1, starveRate=0.15,
              health=80, selfHarmEffect=3, healEffect=8, eatPlants=True):
-        super().__init__(starting_population, minsize, maxsize, growrate, reproducerate, nutrientNeed, starveRate,
+        super().__init__(starting_population, minsize, maxsize, growrate, reproducerate, starveRate,
                      health, selfHarmEffect, healEffect, eatPlants)
 
 class Koala(Herbivore):
-    def __init__(self, starting_population=25, minsize=0.5, maxsize=1.2, growrate=0.15, reproducerate=0.07, nutrientNeed="plants", starveRate=0.12,
-                 health=100, selfHarmEffect=4, healEffect=9, eatPlants=True):
-        super().__init__(starting_population, minsize, maxsize, growrate, reproducerate, nutrientNeed, starveRate,
+    def __init__(self, starting_population=25, minsize=0.5, maxsize=1.2, growrate=0.15, reproducerate=0.07, starveRate=0.12,
+                 health=70, selfHarmEffect=4, healEffect=9, eatPlants=True):
+        super().__init__(starting_population, minsize, maxsize, growrate, reproducerate, starveRate,
                          health, selfHarmEffect, healEffect, eatPlants)
 
-    def eat(self, plant):
-        """To check if the Koala can eat the given plant(Eucalyptus)."""
+    """def eat(self, plant):
+
         amount = plant.beEaten(1, eater=self)
         if amount > 0:
             if self.health < 100:
                 self.health = min(100, self.health + self.healEffect)
-                self.hunger = 0
+                self.hunger = 0"""
 
             
 
 class Fox(Omnivore):
-    def __init__(self, starting_population=15, minsize=0.5, maxsize=1.5, growrate=0.15, reproducerate=0.07, nutrientNeed="all", starveRate=0.12,
+    def __init__(self, starting_population=15, minsize=0.5, maxsize=1.5, growrate=0.15, reproducerate=0.07, starveRate=0.12,
              health=90, selfHarmEffect=4, healEffect=9, eatAll=True, huntSuccessRate=0.5, selfHarmRate=0.04):
-        super().__init__(starting_population, minsize, maxsize, growrate, reproducerate, nutrientNeed, starveRate,
+        super().__init__(starting_population, minsize, maxsize, growrate, reproducerate, starveRate,
                      health, selfHarmEffect, healEffect, eatAll, huntSuccessRate, selfHarmRate)
