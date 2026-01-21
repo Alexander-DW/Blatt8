@@ -1,22 +1,11 @@
 import random
 
-# Base Island class
-
-
-class Island():
-    def __init__(self, size: float, isolation: bool):
-        self.size = size
-        self.isolation = isolation
-
-
 # Ecosystem and its lifeforms
 
-
-class Ecosystem(Island):
-    def __init__(self, size: float, isolation: bool):
-        super().__init__(size, isolation)
-        self.area = 50
-        self.day = 0
+class Ecosystem():
+    def __init__(self, size: float, days: int):
+        self.size = size
+        self.day = days
         self.flora = []
         self.fauna = []
 
@@ -396,12 +385,12 @@ class Herbivore(Fauna):
         super().__init__(starting_population, minsize, maxsize, growrate, reproducerate,
                      starveRate, health, selfHarmEffect, healEffect)
         self.eatPlants = eatPlants
-    
+
     def forage(self, flora_list):
         """Eat plants"""
         if not self.is_alive():
             return
-        
+
         # Find edible plants
         edible_plants = [plant for plant in flora_list if plant.is_alive()]
         
@@ -432,7 +421,7 @@ class Omnivore(Fauna):
                      if animal.is_alive() 
                      and animal != self 
                      and animal.currentsize < self.currentsize]
-        
+
         if prey_list:
             target = random.choice(prey_list)
             if random.random() < self.huntSuccessRate * self.current_hunt_modifier:
