@@ -451,7 +451,6 @@ class Lifeforms():
         """
         self.alive = False
 
-
 # Flora base class
 
 
@@ -583,22 +582,6 @@ class Flora(Lifeforms):
         False
         """
         return self.alive and self.currentsize >= self.minsize
-
-    def die(self):
-        """
-        Docstring for die
-        Change the value of alive to False
-
-        :return: None
-
-        >>> f = Grass()
-        >>> f.alive
-        True
-        >>> f.die()
-        >>> f.alive
-        False
-        """
-        self.alive = False
 
     def fruiting(self):
         """
